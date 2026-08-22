@@ -2155,12 +2155,21 @@ mod tests {
         use local_encoding_ng::{Encoder as _, Encoding};
 
         let localized_not_found = "错误: 系统找不到指定的文件。";
-        let encoded = Encoding::OEM
-            .to_bytes(localized_not_found)
-            .expect("encode localized fixture with the active OEM code page");
+        // GitHub-hosted runners use a US OEM code page that cannot represent
+        // the CJK fixture; keep the round-trip invariant meaningful there with
+        // an ASCII fixture that every OEM code page can encode.
+        let (fixture, encoded) = if let Ok(encoded) = Encoding::OEM.to_bytes(localized_not_found) {
+            (localized_not_found, encoded)
+        } else {
+            let ascii = "ERROR: The system cannot find the file specified.";
+            let encoded = Encoding::OEM
+                .to_bytes(ascii)
+                .expect("ASCII encodes in every OEM code page");
+            (ascii, encoded)
+        };
         let decoded = decode_native_command_output(&encoded);
 
-        assert_eq!(decoded, localized_not_found);
+        assert_eq!(decoded, fixture);
         assert!(output_is_not_found(&CommandOutput::failure(decoded)));
     }
 

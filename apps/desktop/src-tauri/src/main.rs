@@ -2744,6 +2744,9 @@ mod tests {
         );
     }
 
+    // The OneClickRunner mock reproduces the Windows schtasks/whoami flow;
+    // non-Windows service managers issue different native commands.
+    #[cfg(windows)]
     #[test]
     fn one_click_setup_uses_isolated_codex_config_and_mocked_native_runner() {
         let (directory, state) = configured_state();
@@ -2872,6 +2875,7 @@ mod tests {
         assert!(legacy_root.join("router.py").is_file());
     }
 
+    #[cfg(windows)]
     #[test]
     fn one_click_setup_is_idempotent_for_an_installed_codex_integration() {
         let (directory, state) = configured_state();
