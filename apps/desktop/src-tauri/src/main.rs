@@ -18,10 +18,11 @@ use std::{
 
 use cmr_cli::{
     codex::{CodexIntegration, IntegrationStatus},
-    service::{
-        CommandRunner, LegacyWindowsTaskBackup, ServiceManager, ServiceStatus, SystemRunner,
-    },
+    service::{CommandRunner, ServiceManager, ServiceStatus, SystemRunner},
 };
+
+#[cfg(windows)]
+use cmr_cli::service::LegacyWindowsTaskBackup;
 use cmr_providers::{
     AuthStyle, ProtocolFamily, ProviderCapabilities, ProviderPreset, built_in_presets,
     custom_compatible_preset, preset_by_id,
