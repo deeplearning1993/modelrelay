@@ -1628,7 +1628,7 @@ fn update_provider(
     state.update_provider(&mut input)
 }
 
-const RELEASES_URL: &str = "https://github.com/deeplearning1993/modelrela/releases";
+const RELEASES_URL: &str = "https://github.com/deeplearning1993/modelrelay/releases";
 
 #[tauri::command]
 fn open_releases_page() -> Result<(), String> {
