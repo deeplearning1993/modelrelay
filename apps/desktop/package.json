@@ -1,0 +1,23 @@
+{
+  "name": "modelrelay-desktop",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "build:sidecar": "node scripts/prepare-sidecar.mjs",
+    "build:bundle": "npm run build:sidecar && npm run build",
+    "check:packaging": "node scripts/check-packaging.mjs",
+    "preview": "vite preview --host 127.0.0.1",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
+  }
+}

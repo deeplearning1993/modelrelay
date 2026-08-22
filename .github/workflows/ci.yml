@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  cross-platform:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            desktop_bundle: deb
+          - os: macos-latest
+            desktop_bundle: app
+          - os: windows-latest
+            desktop_bundle: nsis
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Linux desktop build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install Rust 1.88 with lint components
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master, pinned
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+
+      - name: Install Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Test Rust workspace
+        run: cargo test --workspace --all-targets --locked
+
+      - name: Lint Rust workspace
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Build router CLI for black-box tests
+        run: cargo build -p cmr-cli --locked --features e2e-loopback-upstream
+
+      - name: Run loopback-only end-to-end tests
+        run: python tests/e2e_router.py
+
+      - name: Install desktop dependencies
+        working-directory: apps/desktop
+        run: npm ci
+
+      - name: Build desktop frontend
+        working-directory: apps/desktop
+        run: npm run build
+
+      - name: Check desktop packaging configuration
+        working-directory: apps/desktop
+        run: npm run check:packaging
+
+      - name: Check desktop Rust host
+        run: cargo check -p cmr-desktop --locked
+
+      - name: Build unsigned Tauri desktop bundle
+        working-directory: apps/desktop
+        run: npm run tauri build -- --bundles ${{ matrix.desktop_bundle }}
+
+      - name: Verify installed Windows sidecar
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: apps/desktop/scripts/verify-windows-install.ps1

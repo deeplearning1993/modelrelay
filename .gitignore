@@ -1,0 +1,25 @@
+**/target/
+**/node_modules/
+**/dist/
+/apps/desktop/src-tauri/binaries/
+/.idea/
+/.vscode/
+*.sqlite3
+*.sqlite3-*
+*.db
+*.log
+*.key
+*.pem
+*.p12
+*.dpapi
+.env
+.env.*
+!.env.example
+/secrets/
+/runtime/
+__pycache__/
+*.py[cod]
+
+# Local development scripts (contain machine-specific absolute paths)
+gate.ps1
+rebuild.ps1

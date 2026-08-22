@@ -1,0 +1,17 @@
+[package]
+name = "cmr-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Canonical protocol, catalog, context replay, and compaction types for Codex Model Router"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
+

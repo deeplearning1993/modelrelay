@@ -1,0 +1,31 @@
+[package]
+name = "cmr-storage"
+description = "Local configuration, operating-system credential storage, and conversation persistence for Codex Model Router"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+# Compile-time-only escape hatch for the repository's isolated loopback E2E
+# harness. It is also gated by debug_assertions, so release/all-features builds
+# retain the production-only official upstream allowlist.
+e2e-loopback-upstream = []
+
+[dependencies]
+chrono.workspace = true
+directories.workspace = true
+keyring.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tempfile = "3.20"
+thiserror.workspace = true
+toml.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true
