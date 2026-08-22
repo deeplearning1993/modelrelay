@@ -203,7 +203,7 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
   return invoke<T>(command, args);
 }
 
-const RELEASES_URL = "https://github.com/YOUR_USERNAME/modelrelay/releases";
+const RELEASES_URL = "https://github.com/deeplearning1993/modelrela/releases";
 const THEME_STORAGE_KEY = "mr.theme";
 const VIEW_STORAGE_KEY = "mr.view";
 
