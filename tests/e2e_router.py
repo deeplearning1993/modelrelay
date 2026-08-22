@@ -1611,7 +1611,10 @@ class RouterEndToEndTests(unittest.TestCase):
         catalog_requests = [
             request
             for request in official_requests
-            if request["method"] == "GET" and request["path"] == "/models"
+            # Re-verification replays the last accepted client query
+            # (?client_version=...), so compare the path portion only.
+            if request["method"] == "GET"
+            and request["path"].split("?", 1)[0] == "/models"
         ]
         self.assertEqual(len(catalog_requests), 3)
         self.assertEqual(
@@ -1914,32 +1917,28 @@ class RouterEndToEndTests(unittest.TestCase):
         self.assertIn(third_marker, inherited_text)
         self.assertNotIn("model-that-does-not-exist", inherited_text)
 
-    def test_13_standard_context_management_is_never_silently_dropped(self) -> None:
+    def test_13_context_management_official_passthrough_external_strip(self) -> None:
+        # External models have no server-side context management; the router
+        # owns compaction for them (full portable replay + its own boundary),
+        # so the field is deliberately stripped instead of failing the turn.
+        # Official turns keep relaying the field to the real backend verbatim.
         external_before = len(self.external_a_state.snapshot())
-        with self.assertRaises(urllib.error.HTTPError) as raised:
-            http_request(
-                self.base_url,
-                "/v1/responses",
-                method="POST",
-                value={
-                    "model": "external-a",
-                    "stream": False,
-                    "input": "external context management must fail locally",
-                    "context_management": [
-                        {"type": "compaction", "compact_threshold": 20_000}
-                    ],
-                },
-                headers=self.request_headers(),
-            )
-        response = raised.exception
-        try:
-            self.assertEqual(response.code, 400)
-            payload = response.read()
-        finally:
-            response.close()
-        error = parse_json_body(payload)
-        self.assertIn("context_management", json.dumps(error, sort_keys=True))
-        self.assertEqual(len(self.external_a_state.snapshot()), external_before)
+        response = self.post_response(
+            {
+                "model": "external-a",
+                "stream": False,
+                "input": "external context management is stripped, not failed",
+                "context_management": [
+                    {"type": "compaction", "compact_threshold": 20_000}
+                ],
+            }
+        )
+        self.assertEqual(response["model"], "external-a")
+        external_requests = self.external_a_state.snapshot()
+        self.assertEqual(len(external_requests), external_before + 1)
+        self.assertNotIn(
+            "context_management", external_requests[-1]["body"]
+        )
 
         official_before = len(
             [

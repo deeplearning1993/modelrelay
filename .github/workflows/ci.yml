@@ -54,6 +54,12 @@ jobs:
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
 
+      # cmr-desktop's Tauri build script validates the externalBin sidecars on
+      # disk, so they must be staged before any cargo command compiles that
+      # crate. prepare-sidecar.mjs only uses Node builtins; npm ci comes later.
+      - name: Prepare desktop sidecar binaries
+        run: node apps/desktop/scripts/prepare-sidecar.mjs
+
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
 

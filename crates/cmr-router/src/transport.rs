@@ -1880,17 +1880,29 @@ fn ensure_external_harness_tools(
     let Some(object) = request.as_object_mut() else {
         return Ok(());
     };
-    match object.get_mut("input").and_then(Value::as_array_mut) {
-        Some(items) => items.insert(
+    // Responses allows a bare string as `input`; a turn without a
+    // previous_response_id can still carry that shorthand here, so
+    // normalize it instead of discarding the turn's only message.
+    if let Some(items) = object.get_mut("input").and_then(Value::as_array_mut) {
+        items.insert(
             0,
             json!({"type": "additional_tools", "role": "developer", "tools": tools}),
-        ),
-        None => {
-            object.insert(
-                "input".into(),
-                json!([{"type": "additional_tools", "role": "developer", "tools": tools}]),
-            );
+        );
+    } else {
+        let text = object
+            .get("input")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        let mut items =
+            vec![json!({"type": "additional_tools", "role": "developer", "tools": tools})];
+        if let Some(text) = text {
+            items.push(json!({
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": text}],
+            }));
         }
+        object.insert("input".into(), Value::Array(items));
     }
     Ok(())
 }
@@ -2007,6 +2019,14 @@ fn try_lossless_external_replay(
     target_owner: Option<&ProviderOwnerId>,
 ) -> Result<bool> {
     if target_provider == "official" {
+        return Ok(false);
+    }
+    // A compaction item in the current input resets the history; the boundary
+    // planner owns that semantics, so never short-circuit it here.
+    if input_items(request)?
+        .iter()
+        .any(|item| item.get("type").and_then(Value::as_str) == Some("compaction"))
+    {
         return Ok(false);
     }
     let Some(window) = external_context_window(&state.config, target_public_model(request)) else {
@@ -4711,7 +4731,7 @@ mod tests {
     }
 
     #[test]
-    fn external_switch_replays_precompaction_history_when_window_fits() {
+    fn external_switch_never_replays_across_a_compaction_boundary_even_when_window_fits() {
         let mut config = RouterConfig::default();
         config.providers.push(ProviderConfig {
             id: "zhipu".into(),
@@ -4739,50 +4759,42 @@ mod tests {
         .expect("app state");
         // Recorded pre-compaction turn followed by a response whose input
         // carries an official compaction item without a portable mapping.
-        state
-            .sessions
-            .record_response(&ResponseRecord {
-                id: "resp_pre_compaction".into(),
-                session_id: "session-lossless".into(),
-                previous_response_id: None,
-                provider_id: "official".into(),
-                provider_owner_id: None,
-                model_id: "gpt-5.6-luna".into(),
-                input: vec![json!({
-                    "type": "message", "role": "user",
-                    "content": [{"type": "input_text", "text": "pre-compaction turn"}]
-                })],
-                output: vec![json!({
-                    "type": "message", "role": "assistant",
-                    "content": [{"type": "output_text", "text": "early answer"}]
-                })],
-                status: ResponseStatus::Completed,
-                incomplete_details: None,
-                created_at: Utc::now(),
-            })
-            .expect("seed pre-compaction record");
-        state
-            .sessions
-            .record_response(&ResponseRecord {
-                id: "resp_post_compaction".into(),
-                session_id: "session-lossless".into(),
-                previous_response_id: Some("resp_pre_compaction".into()),
-                provider_id: "official".into(),
-                provider_owner_id: None,
-                model_id: "gpt-5.6-luna".into(),
-                input: vec![json!({
-                    "type": "message", "role": "user",
-                    "content": [{"type": "input_text", "text": "post-compaction turn"}]
-                })],
-                output: vec![json!({
-                    "type": "message", "role": "assistant",
-                    "content": [{"type": "output_text", "text": "later answer"}]
-                })],
-                status: ResponseStatus::Completed,
-                incomplete_details: None,
-                created_at: Utc::now(),
-            })
-            .expect("seed post-compaction record");
+        let seed = |id: &str, previous: Option<&str>, user: &str, assistant: &str| {
+            state
+                .sessions
+                .record_response(&ResponseRecord {
+                    id: id.into(),
+                    session_id: "session-lossless".into(),
+                    previous_response_id: previous.map(str::to_owned),
+                    provider_id: "official".into(),
+                    provider_owner_id: None,
+                    model_id: "gpt-5.6-luna".into(),
+                    input: vec![json!({
+                        "type": "message", "role": "user",
+                        "content": [{"type": "input_text", "text": user}]
+                    })],
+                    output: vec![json!({
+                        "type": "message", "role": "assistant",
+                        "content": [{"type": "output_text", "text": assistant}]
+                    })],
+                    status: ResponseStatus::Completed,
+                    incomplete_details: None,
+                    created_at: Utc::now(),
+                })
+                .expect("seed record");
+        };
+        seed(
+            "resp_pre_compaction",
+            None,
+            "pre-compaction turn",
+            "early answer",
+        );
+        seed(
+            "resp_post_compaction",
+            Some("resp_pre_compaction"),
+            "post-compaction turn",
+            "later answer",
+        );
 
         let mut request = json!({
             "model": "glm-5.3",
@@ -4792,18 +4804,31 @@ mod tests {
                 {"type":"message","role":"user","content":[{"type":"input_text","text":"继续"}]}
             ]
         });
-        prepare_replay_for_owner(&state, &mut request, "zhipu", None).expect("lossless replay");
+        prepare_replay_for_owner(&state, &mut request, "zhipu", None).expect("boundary replay");
         let replay = request["input"].as_array().expect("replay array");
         let text: Vec<&str> = replay
             .iter()
             .filter_map(|item| item.pointer("/content/0/text").and_then(Value::as_str))
             .collect();
-        assert!(text.contains(&"pre-compaction turn"), "lossless: {text:?}");
-        assert!(text.contains(&"early answer"), "lossless: {text:?}");
-        assert!(text.contains(&"post-compaction turn"), "lossless: {text:?}");
+        // A compaction is a deliberate forgetting operation: even with a huge
+        // external window the pre-compaction turns must not be resurrected.
+        for forgotten in [
+            "pre-compaction turn",
+            "early answer",
+            "post-compaction turn",
+        ] {
+            assert!(
+                !text.contains(&forgotten),
+                "no replay of {forgotten}: {text:?}"
+            );
+        }
         assert!(
-            !text.iter().any(|t| t.contains("context note")),
-            "no neutral note when the window fits: {text:?}"
+            text.iter().any(|t| t.contains("context note")),
+            "unmapped official compaction degrades to the neutral note: {text:?}"
+        );
+        assert!(
+            text.contains(&"继续"),
+            "the current turn is preserved: {text:?}"
         );
         assert!(
             !replay.iter().any(|item| item["type"] == "compaction"),

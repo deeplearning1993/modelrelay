@@ -769,10 +769,15 @@ impl StateStore {
             });
         let mut items = Vec::new();
         let mut crossed_compaction = false;
+        // A compaction boundary is a deliberate forgetting operation. Full
+        // (lossless) replay must never resurrect pre-compaction content across
+        // one; callers fall back to the compaction-boundary replay instead.
+        let mut full_saw_compaction = false;
         for response in chain {
             for item in response.input {
                 let is_compaction = item.get("type").and_then(Value::as_str) == Some("compaction");
                 if full && is_compaction {
+                    full_saw_compaction = true;
                     continue;
                 }
                 if let Some(item) = sanitize_replay_item(
@@ -792,6 +797,7 @@ impl StateStore {
             for item in response.output {
                 let is_compaction = item.get("type").and_then(Value::as_str) == Some("compaction");
                 if full && is_compaction {
+                    full_saw_compaction = true;
                     continue;
                 }
                 if let Some(item) = sanitize_replay_item(
@@ -808,6 +814,13 @@ impl StateStore {
                     items.push(item);
                 }
             }
+        }
+        if full && full_saw_compaction {
+            return Err(StorageError::InvalidConfig(
+                "conversation history was compacted; replaying from the compaction boundary \
+                 instead of the full pre-compaction chain"
+                    .into(),
+            ));
         }
         if truncated_at_opaque_root && !crossed_compaction && !same_native_official_suffix {
             return Err(StorageError::InvalidConfig(
