@@ -471,6 +471,9 @@ impl DesktopState {
                     )
                 },
             )?;
+        // The legacy Python router migration is a Windows-only concern; on
+        // other platforms there is never a legacy task to migrate or restore.
+        #[cfg(windows)]
         let legacy = migrate_known_legacy_windows_router(&config, &router_executable, &state_db)?;
         let result = complete_local_setup_core(
             self,
@@ -481,6 +484,7 @@ impl DesktopState {
             SystemRunner,
             probe_health,
         );
+        #[cfg(windows)]
         if let (Err(failure), Some(legacy)) = (&result, legacy) {
             if restore_known_legacy_windows_router(&config, &router_executable, &state_db, &legacy)
                 .is_err()
@@ -2090,6 +2094,7 @@ fn unix_milliseconds() -> Result<u64, String> {
     u64::try_from(duration.as_millis()).map_err(|_| "系统时间超出支持范围。".to_owned())
 }
 
+#[cfg(windows)]
 struct KnownLegacyWindowsRouter {
     backup: LegacyWindowsTaskBackup,
     powershell: PathBuf,
@@ -2211,15 +2216,6 @@ where
     }))
 }
 
-#[cfg(not(windows))]
-fn migrate_known_legacy_windows_router(
-    _config: &RouterConfig,
-    _router_executable: &Path,
-    _state_db: &Path,
-) -> Result<Option<KnownLegacyWindowsRouter>, LocalSetupFailure> {
-    Ok(None)
-}
-
 #[cfg(windows)]
 fn restore_known_legacy_windows_router(
     config: &RouterConfig,
@@ -2243,22 +2239,14 @@ fn restore_known_legacy_windows_router(
         .map_err(|_| ())
 }
 
-#[cfg(not(windows))]
-fn restore_known_legacy_windows_router(
-    _config: &RouterConfig,
-    _router_executable: &Path,
-    _state_db: &Path,
-    _legacy: &KnownLegacyWindowsRouter,
-) -> Result<(), ()> {
-    Ok(())
-}
-
+#[cfg(windows)]
 fn config_path_for_migration(_config: &RouterConfig) -> Result<PathBuf, LocalSetupFailure> {
     config_store()
         .map(|store| store.path().to_path_buf())
         .map_err(|_| legacy_failure("无法确认路由配置路径；未修改旧版后台任务。"))
 }
 
+#[cfg(windows)]
 fn legacy_failure(message: &str) -> LocalSetupFailure {
     local_setup_failure(
         "migrate-legacy-service",
@@ -2476,8 +2464,11 @@ mod tests {
     use std::{
         ffi::{OsStr, OsString},
         fs,
-        sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+        sync::atomic::{AtomicUsize, Ordering},
     };
+
+    #[cfg(windows)]
+    use std::sync::atomic::AtomicBool;
 
     use anyhow::Result as AnyhowResult;
     use cmr_cli::service::CommandOutput;
@@ -2558,6 +2549,7 @@ mod tests {
         (directory, DesktopState::new(store))
     }
 
+    #[cfg(windows)]
     #[derive(Default)]
     struct OneClickRunnerState {
         installed: bool,
@@ -2565,9 +2557,11 @@ mod tests {
         calls: Vec<(String, Vec<String>)>,
     }
 
+    #[cfg(windows)]
     #[derive(Clone, Default)]
     struct OneClickRunner(Arc<Mutex<OneClickRunnerState>>);
 
+    #[cfg(windows)]
     impl CommandRunner for OneClickRunner {
         fn run(&mut self, program: &OsStr, arguments: &[OsString]) -> AnyhowResult<CommandOutput> {
             let program = program.to_string_lossy().into_owned();
